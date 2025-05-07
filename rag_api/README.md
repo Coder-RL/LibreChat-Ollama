@@ -43,11 +43,21 @@ Use the provided test script to verify the RAG API is working correctly:
 
 ```bash
 # Start the RAG API
-uvicorn app.main:app --host 0.0.0.0 --port 5110 --reload
+./start_api.sh
 
 # In another terminal, run the test script
 ./test_rag_api.sh
 ```
+
+The test script performs comprehensive validation:
+
+- Checks if all required services (Ollama, RAG API) are running
+- Validates HTTP status codes (fails on 4xx/5xx errors)
+- Verifies embedding dimensions match the expected value (3072)
+- Logs all requests, responses, and validation results to `rag_test.log`
+- Provides detailed error messages for troubleshooting
+
+If any test fails, the script will exit with a non-zero status code and provide detailed error information.
 
 ## Integration with LibreChat
 
@@ -68,3 +78,25 @@ rag:
 - Never commit `.env` files or `librechat.yaml` with passwords to version control
 - Always use `.pgpass` for PostgreSQL password management
 - Keep the `.env.example` and `librechat.yaml.example` files updated for reference
+
+### Security Best Practices
+
+1. **Password Management**:
+   - Use `.pgpass` for PostgreSQL credentials
+   - Set proper file permissions (`chmod 600 ~/.pgpass`)
+   - Never store passwords in environment files or Docker Compose files
+
+2. **API Security**:
+   - In production, restrict CORS to specific origins
+   - Add rate limiting to prevent abuse
+   - Consider adding authentication for the RAG API
+
+3. **Data Protection**:
+   - Be aware that vector embeddings can potentially leak information
+   - Consider implementing access controls for sensitive document collections
+   - Regularly audit and clean up unused vector data
+
+4. **Error Handling**:
+   - The test script is designed to fail fast on errors
+   - All errors are logged with detailed information
+   - Never suppress or ignore security-related errors
