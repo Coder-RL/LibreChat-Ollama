@@ -1,3 +1,9 @@
 {
-  "supersecretapikey123": "default-dev-key"
+  "supersecretapikey123": {
+    "label": "default-dev-key",
+    "created": 1714958815,
+    "last_used": null,
+    "seen_ips": [],
+    "request_count": 0
+  }
 }

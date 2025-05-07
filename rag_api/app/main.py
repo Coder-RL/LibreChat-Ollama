@@ -31,12 +31,42 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Custom rate limit exceeded handler to track security events
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    client_ip = request.client.host
+    endpoint = request.url.path
+
+    # Track rate limit hits in security log
+    SECURITY_LOG["rate_limit_hits"][f"{client_ip}:{endpoint}"] += 1
+
+    # Log the rate limit hit
+    logger.warning(f"Rate limit exceeded for {endpoint} from {client_ip}")
+
+    # Return standard rate limit response
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": "Rate limit exceeded",
+            "limit": str(exc.detail)
+        }
+    )
+
 # Add rate limiter to app state
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
-# Import token store for API key validation
-from .token_store import is_valid_token
+# Import token store for API key validation and management
+from .token_store import is_valid_token, list_tokens, prune_stale_tokens, get_token_usage_stats
+
+# Security logging and monitoring
+from collections import defaultdict
+SECURITY_LOG = {
+    "invalid_keys": defaultdict(int),
+    "blocked_ips": defaultdict(int),
+    "unknown_token_ips": defaultdict(set),
+    "rate_limit_hits": defaultdict(int)
+}
+INVALID_THRESHOLD = int(os.getenv("INVALID_KEY_THRESHOLD", "5"))
 
 # Optional IP whitelist (empty means allow all)
 WHITELISTED_IPS = set(os.getenv("WHITELISTED_IPS", "127.0.0.1,localhost").split(","))
@@ -48,10 +78,21 @@ def validate_api_key(x_api_key: str = Header(..., description="API key for authe
     """
     Validate the API key provided in the x-api-key header.
     Optionally validate client IP if IP whitelisting is enabled.
+    Tracks security events like invalid keys and new IPs.
     """
+    client_ip = request.client.host if request else "unknown"
+
     # Validate API key
-    if not is_valid_token(x_api_key):
-        logger.warning(f"Invalid API key attempt")
+    if not is_valid_token(x_api_key, client_ip):
+        # Track invalid key attempts
+        SECURITY_LOG["invalid_keys"][client_ip] += 1
+
+        # Log warning or error based on threshold
+        if SECURITY_LOG["invalid_keys"][client_ip] >= INVALID_THRESHOLD:
+            logger.error(f"❗ SECURITY ALERT: Multiple failed auth attempts from {client_ip}")
+        else:
+            logger.warning(f"Invalid API key attempt from {client_ip}")
+
         raise HTTPException(
             status_code=401,
             detail="Invalid API key"
@@ -59,8 +100,8 @@ def validate_api_key(x_api_key: str = Header(..., description="API key for authe
 
     # Check IP whitelist if enabled
     if IP_WHITELIST_ENABLED and request:
-        client_ip = request.client.host
         if client_ip not in WHITELISTED_IPS:
+            SECURITY_LOG["blocked_ips"][client_ip] += 1
             logger.warning(f"Access attempt from non-whitelisted IP: {client_ip}")
             raise HTTPException(
                 status_code=403,
@@ -140,6 +181,10 @@ async def health_check():
 async def create_embedding(req: EmbeddingRequest, request: Request):
     """Generate embeddings for the provided text using Ollama."""
     try:
+        # Log request for monitoring
+        client_ip = request.client.host
+        logger.info(f"Embedding request from {client_ip} - text length: {len(req.text)}")
+
         # For testing purposes, generate a random embedding
         # In production, this would call Ollama's embedding API
         vector_dim = int(os.environ.get("VECTOR_DIM", 3072))
@@ -160,6 +205,10 @@ async def create_embedding(req: EmbeddingRequest, request: Request):
 async def query_rag(req: QueryRequest, request: Request):
     """Query the RAG system with the provided text."""
     try:
+        # Log request for monitoring
+        client_ip = request.client.host
+        logger.info(f"RAG query from {client_ip} - query: '{req.query[:30]}...' top_k: {req.top_k}")
+
         # For testing purposes, return mock results
         # In production, this would query the pgvector database
 
@@ -184,6 +233,35 @@ async def query_rag(req: QueryRequest, request: Request):
         logger.error(f"RAG query failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process RAG query: {str(e)}")
 
+# Token usage dashboard endpoint
+@app.get("/tokens/usage", dependencies=[Depends(validate_api_key)])
+async def token_usage():
+    """Get usage statistics for all tokens."""
+    stats = get_token_usage_stats()
+    return JSONResponse(content=stats)
+
+# Token pruning endpoint
+@app.post("/tokens/prune", dependencies=[Depends(validate_api_key)])
+async def prune_tokens():
+    """Remove tokens that haven't been used for a long time."""
+    removed = prune_stale_tokens()
+    return {
+        "revoked": [r[0][:6] + "..." for r in removed],
+        "count": len(removed),
+        "details": [{"label": r[1].get("label"), "last_used": r[1].get("last_used")} for r in removed]
+    }
+
+# Security audit endpoint
+@app.get("/security/audit", dependencies=[Depends(validate_api_key)])
+async def security_audit():
+    """Get security audit information."""
+    return {
+        "invalid_key_attempts": dict(SECURITY_LOG["invalid_keys"]),
+        "blocked_ips": dict(SECURITY_LOG["blocked_ips"]),
+        "unknown_token_ips": {k: list(v) for k, v in SECURITY_LOG["unknown_token_ips"].items()},
+        "rate_limit_hits": dict(SECURITY_LOG["rate_limit_hits"])
+    }
+
 # Root endpoint with API information
 @app.get("/")
 async def root():
@@ -196,7 +274,10 @@ async def root():
         "endpoints": [
             {"path": "/health", "method": "GET", "description": "Health check endpoint", "auth_required": False},
             {"path": "/embed", "method": "POST", "description": "Generate embeddings for text", "auth_required": True},
-            {"path": "/rag/query", "method": "POST", "description": "Query the RAG system", "auth_required": True}
+            {"path": "/rag/query", "method": "POST", "description": "Query the RAG system", "auth_required": True},
+            {"path": "/tokens/usage", "method": "GET", "description": "Get token usage statistics", "auth_required": True},
+            {"path": "/tokens/prune", "method": "POST", "description": "Remove stale tokens", "auth_required": True},
+            {"path": "/security/audit", "method": "GET", "description": "Get security audit information", "auth_required": True}
         ],
         "documentation": "/docs"
     }

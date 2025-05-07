@@ -39,7 +39,7 @@ The `.env` file is already configured to use pgvector with Ollama embeddings.
 
 #### API Key Security
 
-The RAG API is protected by a token-based authentication system. API keys are stored in a JSON file and can be managed using the provided script:
+The RAG API is protected by a token-based authentication system with enhanced security features. API keys are stored in a JSON file with usage metadata and can be managed using the provided script:
 
 ```bash
 # Generate a new token
@@ -57,6 +57,74 @@ python manage_token.py revoke "token-to-revoke"
 
 For security, the API key is required for all endpoints except `/health`. Clients must include the API key in the `x-api-key` header for all requests.
 
+#### Token Usage Dashboard
+
+The API provides a token usage dashboard to monitor token usage:
+
+```bash
+# Get token usage statistics
+curl -H "x-api-key: your-token-here" http://localhost:5110/tokens/usage
+```
+
+This returns detailed information about each token, including:
+- When it was created
+- When it was last used
+- How many requests it has made
+- Which IP addresses have used it
+- How many days since it was last used
+
+#### Auto-Revoke Stale Tokens
+
+The API can automatically revoke tokens that haven't been used for a specified period (default: 30 days):
+
+```bash
+# Prune stale tokens
+curl -X POST -H "x-api-key: your-token-here" http://localhost:5110/tokens/prune
+```
+
+#### Security Audit
+
+The API provides a security audit endpoint to monitor security events:
+
+```bash
+# Get security audit information
+curl -H "x-api-key: your-token-here" http://localhost:5110/security/audit
+```
+
+This returns information about:
+- Invalid API key attempts
+- Blocked IP addresses
+- Unknown IP addresses using tokens
+- Rate limit hits
+
+#### Security Notifications
+
+The API includes a notification script that can send alerts via email or Slack when security events occur:
+
+```bash
+# Send email notification
+python notify.py email --to admin@example.com --subject "Security Alert" --message "Multiple failed auth attempts from 192.168.1.100"
+
+# Send Slack notification
+python notify.py slack --webhook https://hooks.slack.com/services/XXX/YYY/ZZZ --channel "#security" --message "Rate limit exceeded for /embed endpoint"
+```
+
+You can configure the notification settings using environment variables:
+
+```bash
+# Email settings
+export SMTP_FROM="rag-api-alerts@example.com"
+export SMTP_SERVER="smtp.example.com"
+export SMTP_PORT="587"
+export SMTP_USER="username"
+export SMTP_PASSWORD="password"
+
+# Slack settings
+export SLACK_WEBHOOK="https://hooks.slack.com/services/XXX/YYY/ZZZ"
+export SLACK_CHANNEL="#security-alerts"
+export SLACK_USERNAME="RAG API Security Bot"
+```
+
 #### Rate Limiting
 
 The API includes rate limiting to prevent abuse:
@@ -64,7 +132,7 @@ The API includes rate limiting to prevent abuse:
 - `/embed` endpoint: 10 requests per minute
 - `/rag/query` endpoint: 20 requests per minute
 
-When the rate limit is exceeded, the API returns a 429 Too Many Requests response.
+When the rate limit is exceeded, the API returns a 429 Too Many Requests response and logs the event.
 
 ### 4. Testing the RAG API
 
@@ -118,7 +186,12 @@ rag:
 2. **API Security**:
    - Token-based authentication is implemented for all endpoints except `/health`
    - Tokens can be rotated, revoked, and audited using the `manage_token.py` script
+   - Token usage is tracked with metadata (creation time, last used, request count, IP addresses)
+   - Stale tokens can be automatically revoked to prevent security risks
    - Rate limiting is implemented to prevent abuse (10/min for `/embed`, 20/min for `/rag/query`)
+   - Security events are logged and can be monitored via the `/security/audit` endpoint
+   - Multiple failed authentication attempts from the same IP are flagged as security alerts
+   - Email and Slack notifications can be sent for security events using the `notify.py` script
    - In production, restrict CORS to specific origins
    - Consider using HTTPS in production environments
    - Optional IP whitelisting can be enabled for additional security

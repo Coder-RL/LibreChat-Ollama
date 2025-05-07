@@ -207,6 +207,50 @@ fi
 # Clean up temporary files
 rm -f "$EMBED_RESPONSE" "$QUERY_RESPONSE"
 
+# === Test token usage endpoint ===
+echo -e "\n🔹 Testing /tokens/usage endpoint..." | tee -a "$LOG_FILE"
+USAGE_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$API_URL/tokens/usage" \
+  -H "x-api-key: $API_KEY" \
+  -m $HTTP_TIMEOUT)
+
+USAGE_BODY=$(echo "$USAGE_RESPONSE" | head -n -1)
+USAGE_STATUS=$(echo "$USAGE_RESPONSE" | tail -n1)
+
+echo "📥 Status code: $USAGE_STATUS" | tee -a "$LOG_FILE"
+if [[ "$USAGE_STATUS" -eq 200 ]]; then
+  echo "✅ Token usage endpoint working" | tee -a "$LOG_FILE"
+  echo "$USAGE_BODY" | jq '.' >> "$LOG_FILE"
+
+  # Check if our token is in the response
+  if echo "$USAGE_BODY" | jq -e '.tokens | length > 0' > /dev/null; then
+    echo "✅ Token usage data returned" | tee -a "$LOG_FILE"
+  else
+    echo "❌ No token data returned" | tee -a "$LOG_FILE"
+    ((failures++))
+  fi
+else
+  echo "❌ Token usage endpoint failed with status $USAGE_STATUS" | tee -a "$LOG_FILE"
+  ((failures++))
+fi
+
+# === Test security audit endpoint ===
+echo -e "\n🔹 Testing /security/audit endpoint..." | tee -a "$LOG_FILE"
+AUDIT_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$API_URL/security/audit" \
+  -H "x-api-key: $API_KEY" \
+  -m $HTTP_TIMEOUT)
+
+AUDIT_BODY=$(echo "$AUDIT_RESPONSE" | head -n -1)
+AUDIT_STATUS=$(echo "$AUDIT_RESPONSE" | tail -n1)
+
+echo "📥 Status code: $AUDIT_STATUS" | tee -a "$LOG_FILE"
+if [[ "$AUDIT_STATUS" -eq 200 ]]; then
+  echo "✅ Security audit endpoint working" | tee -a "$LOG_FILE"
+  echo "$AUDIT_BODY" | jq '.' >> "$LOG_FILE"
+else
+  echo "❌ Security audit endpoint failed with status $AUDIT_STATUS" | tee -a "$LOG_FILE"
+  ((failures++))
+fi
+
 # === Summary ===
 echo -e "\n✅ Test completed at $(date)" | tee -a "$LOG_FILE"
 if [[ "$failures" -eq 0 ]]; then
