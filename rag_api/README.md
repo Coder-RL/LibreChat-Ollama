@@ -37,6 +37,21 @@ cp .env.example .env
 
 The `.env` file is already configured to use pgvector with Ollama embeddings.
 
+#### API Key Security
+
+The RAG API is protected by an API key. You can generate a secure random API key using the provided script:
+
+```bash
+./generate_api_key.sh [key_length]
+```
+
+This will:
+- Generate a cryptographically secure random API key
+- Update the `.env` file with the new key
+- Update the test script to use the new key
+
+For security, the API key is required for all endpoints except `/health`. Clients must include the API key in the `x-api-key` header for all requests.
+
 ### 4. Testing the RAG API
 
 Use the provided test script to verify the RAG API is working correctly:
@@ -87,9 +102,11 @@ rag:
    - Never store passwords in environment files or Docker Compose files
 
 2. **API Security**:
+   - API key authentication is implemented for all endpoints except `/health`
+   - Use the `generate_api_key.sh` script to create strong, random API keys
    - In production, restrict CORS to specific origins
    - Add rate limiting to prevent abuse
-   - Consider adding authentication for the RAG API
+   - Consider using HTTPS in production environments
 
 3. **Data Protection**:
    - Be aware that vector embeddings can potentially leak information

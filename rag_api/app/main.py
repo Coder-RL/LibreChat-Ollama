@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
@@ -6,7 +6,7 @@ import logging
 import time
 import numpy as np
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, constr
 import httpx
 
 # Configure logging
@@ -22,6 +22,26 @@ app = FastAPI(
     description="Retrieval-Augmented Generation API for LibreChat-Ollama",
     version="1.0.0",
 )
+
+# Get API key from environment
+API_KEY = os.getenv("RAG_API_KEY")
+if not API_KEY:
+    logger.warning("RAG_API_KEY not set in environment. API will be unsecured!")
+
+# API key validation dependency
+def validate_api_key(x_api_key: str = Header(..., description="API key for authentication")):
+    """Validate the API key provided in the x-api-key header."""
+    if not API_KEY:
+        # If API_KEY is not set, skip validation (development only)
+        logger.warning("Skipping API key validation as RAG_API_KEY is not set")
+        return
+
+    if x_api_key != API_KEY:
+        logger.warning(f"Invalid API key attempt: {x_api_key[:5]}...")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API key"
+        )
 
 # Add CORS middleware
 app.add_middleware(
@@ -43,15 +63,16 @@ async def add_process_time_header(request: Request, call_next):
 
 # Models
 class EmbeddingRequest(BaseModel):
-    text: str = Field(..., description="Text to embed")
+    text: constr(min_length=1, max_length=10000) = Field(..., description="Text to embed")
 
 class EmbeddingResponse(BaseModel):
     embedding: List[float] = Field(..., description="Vector embedding of the text")
-    dimensions: int = Field(..., description="Dimensions of the embedding vector")
+    dim: int = Field(..., description="Dimensions of the embedding vector")
+    input_length: int = Field(..., description="Length of the input text")
 
 class QueryRequest(BaseModel):
-    query: str = Field(..., description="Query text to search for")
-    top_k: int = Field(3, description="Number of results to return")
+    query: constr(min_length=3, max_length=1000) = Field(..., description="Query text to search for")
+    top_k: int = Field(3, ge=1, le=20, description="Number of results to return (1-20)")
     filter: Optional[Dict[str, Any]] = Field(None, description="Optional filters for the query")
 
 class QueryResult(BaseModel):
@@ -61,7 +82,7 @@ class QueryResult(BaseModel):
 
 class QueryResponse(BaseModel):
     results: List[QueryResult] = Field([], description="Search results")
-    query_embedding: Optional[List[float]] = Field(None, description="Embedding of the query")
+    query: str = Field(..., description="Original query text")
 
 # Health check endpoint
 @app.get("/health", status_code=200)
@@ -77,10 +98,10 @@ async def health_check():
                     status_code=503,
                     content={"status": "error", "message": "Ollama service unavailable"}
                 )
-        
+
         # Check database connection (placeholder - implement actual check)
         # This would check PostgreSQL with pgvector
-        
+
         return {"status": "healthy", "message": "RAG API is operational"}
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
@@ -90,40 +111,37 @@ async def health_check():
         )
 
 # Embedding endpoint
-@app.post("/embed", response_model=EmbeddingResponse)
-async def create_embedding(request: EmbeddingRequest):
+@app.post("/embed", response_model=EmbeddingResponse, dependencies=[Depends(validate_api_key)])
+async def create_embedding(req: EmbeddingRequest):
     """Generate embeddings for the provided text using Ollama."""
     try:
         # For testing purposes, generate a random embedding
         # In production, this would call Ollama's embedding API
         vector_dim = int(os.environ.get("VECTOR_DIM", 3072))
         mock_embedding = np.random.rand(vector_dim).tolist()
-        
+
         return {
             "embedding": mock_embedding,
-            "dimensions": vector_dim
+            "dim": vector_dim,
+            "input_length": len(req.text)
         }
     except Exception as e:
         logger.error(f"Embedding generation failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate embedding: {str(e)}")
 
 # RAG query endpoint
-@app.post("/rag/query", response_model=QueryResponse)
-async def query_rag(request: QueryRequest):
+@app.post("/rag/query", response_model=QueryResponse, dependencies=[Depends(validate_api_key)])
+async def query_rag(req: QueryRequest):
     """Query the RAG system with the provided text."""
     try:
         # For testing purposes, return mock results
         # In production, this would query the pgvector database
-        
-        # Generate a mock embedding for the query
-        vector_dim = int(os.environ.get("VECTOR_DIM", 3072))
-        mock_query_embedding = np.random.rand(vector_dim).tolist()
-        
+
         # Generate mock results
         mock_results = []
-        for i in range(request.top_k):
+        for i in range(req.top_k):
             mock_results.append({
-                "text": f"This is a mock result {i+1} for query: {request.query}",
+                "text": f"This is a mock result {i+1} for query: {req.query}",
                 "metadata": {
                     "source": f"document_{i+1}.txt",
                     "page": i+1,
@@ -131,10 +149,10 @@ async def query_rag(request: QueryRequest):
                 },
                 "score": round(0.9 - (i * 0.1), 2)  # Decreasing scores
             })
-        
+
         return {
             "results": mock_results,
-            "query_embedding": mock_query_embedding
+            "query": req.query
         }
     except Exception as e:
         logger.error(f"RAG query failed: {str(e)}")
@@ -148,11 +166,13 @@ async def root():
         "name": "LibreChat RAG API",
         "version": "1.0.0",
         "description": "Retrieval-Augmented Generation API for LibreChat-Ollama",
+        "authentication": "API key required via x-api-key header for all endpoints except /health",
         "endpoints": [
-            {"path": "/health", "method": "GET", "description": "Health check endpoint"},
-            {"path": "/embed", "method": "POST", "description": "Generate embeddings for text"},
-            {"path": "/rag/query", "method": "POST", "description": "Query the RAG system"}
-        ]
+            {"path": "/health", "method": "GET", "description": "Health check endpoint", "auth_required": False},
+            {"path": "/embed", "method": "POST", "description": "Generate embeddings for text", "auth_required": True},
+            {"path": "/rag/query", "method": "POST", "description": "Query the RAG system", "auth_required": True}
+        ],
+        "documentation": "/docs"
     }
 
 # Run the application with: uvicorn app.main:app --host 0.0.0.0 --port 5110 --reload
