@@ -2,11 +2,11 @@
 RoleAwareContextInjector for injecting relevant code chunks into prompts based on agent role.
 """
 
-import os
 import logging
 from typing import List, Dict, Any, Optional
 from app.vector.chunk_retriever import ChunkRetriever
 from app.context.chunk_scorer import ChunkRelevanceScorer
+from app.config.constants import DEFAULT_CONTEXT_CHUNKS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -100,13 +100,12 @@ class RoleAwareContextInjector:
 
         logger.info(f"Initialized RoleAwareContextInjector with role={role}")
 
-    def inject(self, query: str, session_id: str = None, project_id: str = None, max_chunks: int = 10) -> List[Dict[str, Any]]:
+    def inject(self, prompt: str, project_id: str = None, max_chunks: int = DEFAULT_CONTEXT_CHUNKS) -> List[Dict[str, Any]]:
         """
         Inject relevant code chunks into the prompt based on the agent role.
 
         Args:
-            query: The query to search for
-            session_id: The session identifier
+            prompt: The prompt to retrieve chunks for
             project_id: The project identifier
             max_chunks: The maximum number of chunks to inject
 
@@ -114,11 +113,13 @@ class RoleAwareContextInjector:
             List of relevant code chunks
         """
         try:
-            # Retrieve all chunks for the project
-            all_chunks = self.retriever.get_chunks(query=query, project_id=project_id, k=50)
+            logger.info(f"[CTX] Injecting context for role={self.role}, project={project_id}")
+
+            # Retrieve chunks using the ChunkRetriever
+            all_chunks = self.retriever.retrieve_chunks(prompt=prompt, project_id=project_id, top_k=50)
 
             if not all_chunks:
-                logger.warning(f"No chunks found for project {project_id}")
+                logger.warning(f"[CTX] No chunks found for project {project_id}")
                 return []
 
             # Filter chunks by role - special handling for test cases
@@ -150,11 +151,11 @@ class RoleAwareContextInjector:
                 filtered_chunks = self._filter_by_role(all_chunks)
 
             if not filtered_chunks:
-                logger.warning(f"No chunks matched role {self.role}, using all chunks")
+                logger.warning(f"[CTX] No chunks matched role {self.role}, using all chunks")
                 filtered_chunks = all_chunks
 
             # Score chunks by relevance
-            scored_chunks = self.scorer.score_chunks(query=query, chunks=filtered_chunks)
+            scored_chunks = self.scorer.score_chunks(query=prompt, chunks=filtered_chunks)
 
             # Take the top N chunks
             top_chunks = scored_chunks[:max_chunks]
@@ -166,12 +167,12 @@ class RoleAwareContextInjector:
 
             # Log more detailed information at INFO level
             file_paths = [chunk.get('file_path', '').split('/')[-1] for chunk in top_chunks]
-            logger.info(f"Injected {len(top_chunks)} chunks for role {self.role}: {', '.join(file_paths)}")
+            logger.info(f"[CTX] Injected {len(top_chunks)} chunks for role {self.role}: {', '.join(file_paths)}")
 
             return top_chunks
 
         except Exception as e:
-            logger.error(f"Error injecting context: {str(e)}")
+            logger.error(f"[CTX] Error injecting context: {str(e)}")
             return []
 
     def _filter_by_role(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -66,6 +66,7 @@ class TestRoleContextInjection(unittest.TestCase):
         # Create mock retriever
         self.mock_retriever = MagicMock(spec=ChunkRetriever)
         self.mock_retriever.get_chunks.return_value = self.mock_chunks
+        self.mock_retriever.retrieve_chunks.return_value = self.mock_chunks
 
         # Create mock scorer
         self.mock_scorer = MagicMock(spec=ChunkRelevanceScorer)
@@ -82,6 +83,7 @@ class TestRoleContextInjection(unittest.TestCase):
         # Create a custom retriever that returns the mock chunks
         mock_retriever = MagicMock(spec=ChunkRetriever)
         mock_retriever.get_chunks.return_value = self.mock_chunks
+        mock_retriever.retrieve_chunks.return_value = self.mock_chunks
 
         # Create a custom scorer that returns the chunks in the order they're given
         mock_scorer = MagicMock(spec=ChunkRelevanceScorer)
@@ -96,8 +98,7 @@ class TestRoleContextInjection(unittest.TestCase):
 
         # Inject context
         result = injector.inject(
-            query="How do I get a user?",
-            session_id="test-session",
+            prompt="How do I get a user?",
             project_id="test-project"
         )
 
@@ -113,6 +114,7 @@ class TestRoleContextInjection(unittest.TestCase):
         # Create a custom retriever that returns the mock chunks
         mock_retriever = MagicMock(spec=ChunkRetriever)
         mock_retriever.get_chunks.return_value = self.mock_chunks
+        mock_retriever.retrieve_chunks.return_value = self.mock_chunks
 
         # Create a custom scorer that returns the chunks in the order they're given
         mock_scorer = MagicMock(spec=ChunkRelevanceScorer)
@@ -127,8 +129,7 @@ class TestRoleContextInjection(unittest.TestCase):
 
         # Inject context
         result = injector.inject(
-            query="How do I display a user profile?",
-            session_id="test-session",
+            prompt="How do I display a user profile?",
             project_id="test-project"
         )
 
@@ -144,6 +145,7 @@ class TestRoleContextInjection(unittest.TestCase):
         # Create a custom retriever that returns the mock chunks
         mock_retriever = MagicMock(spec=ChunkRetriever)
         mock_retriever.get_chunks.return_value = self.mock_chunks
+        mock_retriever.retrieve_chunks.return_value = self.mock_chunks
 
         # Create a custom scorer that returns the chunks in the order they're given
         mock_scorer = MagicMock(spec=ChunkRelevanceScorer)
@@ -158,8 +160,7 @@ class TestRoleContextInjection(unittest.TestCase):
 
         # Inject context
         result = injector.inject(
-            query="Refactor the user code",
-            session_id="test-session",
+            prompt="Refactor the user code",
             project_id="test-project"
         )
 
@@ -173,6 +174,7 @@ class TestRoleContextInjection(unittest.TestCase):
         # Create a custom retriever that returns the mock chunks
         mock_retriever = MagicMock(spec=ChunkRetriever)
         mock_retriever.get_chunks.return_value = self.mock_chunks
+        mock_retriever.retrieve_chunks.return_value = self.mock_chunks
 
         # Create a custom scorer that returns the chunks in the order they're given
         mock_scorer = MagicMock(spec=ChunkRelevanceScorer)
@@ -187,8 +189,7 @@ class TestRoleContextInjection(unittest.TestCase):
 
         # Inject context
         result = injector.inject(
-            query="How is the app deployed?",
-            session_id="test-session",
+            prompt="How is the app deployed?",
             project_id="test-project"
         )
 
@@ -203,6 +204,7 @@ class TestRoleContextInjection(unittest.TestCase):
         # Create a custom retriever that returns the mock chunks
         mock_retriever = MagicMock(spec=ChunkRetriever)
         mock_retriever.get_chunks.return_value = self.mock_chunks
+        mock_retriever.retrieve_chunks.return_value = self.mock_chunks
 
         # Create a custom scorer that assigns predictable scores
         custom_scorer = MagicMock(spec=ChunkRelevanceScorer)
@@ -223,8 +225,7 @@ class TestRoleContextInjection(unittest.TestCase):
 
         # Inject context
         result = injector.inject(
-            query="Test query",
-            session_id="test-session",
+            prompt="Test query",
             project_id="test-project"
         )
 
