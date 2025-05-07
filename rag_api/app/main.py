@@ -9,12 +9,20 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, constr
 import httpx
 
+# Import rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("rag_api")
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -23,25 +31,41 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Get API key from environment
-API_KEY = os.getenv("RAG_API_KEY")
-if not API_KEY:
-    logger.warning("RAG_API_KEY not set in environment. API will be unsecured!")
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Import token store for API key validation
+from .token_store import is_valid_token
+
+# Optional IP whitelist (empty means allow all)
+WHITELISTED_IPS = set(os.getenv("WHITELISTED_IPS", "127.0.0.1,localhost").split(","))
+IP_WHITELIST_ENABLED = os.getenv("ENABLE_IP_WHITELIST", "false").lower() == "true"
 
 # API key validation dependency
-def validate_api_key(x_api_key: str = Header(..., description="API key for authentication")):
-    """Validate the API key provided in the x-api-key header."""
-    if not API_KEY:
-        # If API_KEY is not set, skip validation (development only)
-        logger.warning("Skipping API key validation as RAG_API_KEY is not set")
-        return
-
-    if x_api_key != API_KEY:
-        logger.warning(f"Invalid API key attempt: {x_api_key[:5]}...")
+def validate_api_key(x_api_key: str = Header(..., description="API key for authentication"),
+                    request: Request = None):
+    """
+    Validate the API key provided in the x-api-key header.
+    Optionally validate client IP if IP whitelisting is enabled.
+    """
+    # Validate API key
+    if not is_valid_token(x_api_key):
+        logger.warning(f"Invalid API key attempt")
         raise HTTPException(
             status_code=401,
             detail="Invalid API key"
         )
+
+    # Check IP whitelist if enabled
+    if IP_WHITELIST_ENABLED and request:
+        client_ip = request.client.host
+        if client_ip not in WHITELISTED_IPS:
+            logger.warning(f"Access attempt from non-whitelisted IP: {client_ip}")
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied from this IP address"
+            )
 
 # Add CORS middleware
 app.add_middleware(
@@ -112,7 +136,8 @@ async def health_check():
 
 # Embedding endpoint
 @app.post("/embed", response_model=EmbeddingResponse, dependencies=[Depends(validate_api_key)])
-async def create_embedding(req: EmbeddingRequest):
+@limiter.limit("10/minute")
+async def create_embedding(req: EmbeddingRequest, request: Request):
     """Generate embeddings for the provided text using Ollama."""
     try:
         # For testing purposes, generate a random embedding
@@ -131,7 +156,8 @@ async def create_embedding(req: EmbeddingRequest):
 
 # RAG query endpoint
 @app.post("/rag/query", response_model=QueryResponse, dependencies=[Depends(validate_api_key)])
-async def query_rag(req: QueryRequest):
+@limiter.limit("20/minute")
+async def query_rag(req: QueryRequest, request: Request):
     """Query the RAG system with the provided text."""
     try:
         # For testing purposes, return mock results

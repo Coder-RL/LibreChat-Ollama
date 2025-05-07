@@ -118,6 +118,52 @@ else
   ((failures++))
 fi
 
+# === Test rate limiting ===
+echo -e "\n🔹 Testing rate limiting (negative test)..." | tee -a "$LOG_FILE"
+echo "📤 Sending multiple requests to trigger rate limit..." | tee -a "$LOG_FILE"
+
+# Function to check if rate limiting is working
+test_rate_limit() {
+  local endpoint=$1
+  local limit=$2
+  local status_codes=()
+
+  echo "Testing rate limiting on $endpoint (limit: $limit/minute)..." | tee -a "$LOG_FILE"
+
+  # Send requests until we hit the rate limit or exceed max attempts
+  for i in $(seq 1 $((limit+5))); do
+    STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL$endpoint" \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: $API_KEY" \
+      -d '{"text": "Rate limit test", "query": "Rate limit test"}' \
+      -m $HTTP_TIMEOUT)
+
+    status_codes+=($STATUS)
+    echo -n "." # Progress indicator
+
+    # If we get a 429, rate limiting is working
+    if [[ "$STATUS" -eq 429 ]]; then
+      echo -e "\n✅ Rate limiting working correctly: got 429 Too Many Requests after $i requests" | tee -a "$LOG_FILE"
+      return 0
+    fi
+
+    # Small delay to avoid overwhelming the server
+    sleep 0.1
+  done
+
+  echo -e "\n❌ Failed to trigger rate limit after $((limit+5)) requests" | tee -a "$LOG_FILE"
+  echo "Status codes: ${status_codes[*]}" | tee -a "$LOG_FILE"
+  return 1
+}
+
+# Test rate limiting on /embed endpoint (10/minute)
+if test_rate_limit "/embed" 10; then
+  echo "✅ Rate limiting test passed for /embed" | tee -a "$LOG_FILE"
+else
+  echo "❌ Rate limiting test failed for /embed" | tee -a "$LOG_FILE"
+  ((failures++))
+fi
+
 # === Test /rag/query ===
 echo -e "\n🔹 Testing /rag/query endpoint..." | tee -a "$LOG_FILE"
 echo "📤 Request:" | tee -a "$LOG_FILE"

@@ -39,18 +39,32 @@ The `.env` file is already configured to use pgvector with Ollama embeddings.
 
 #### API Key Security
 
-The RAG API is protected by an API key. You can generate a secure random API key using the provided script:
+The RAG API is protected by a token-based authentication system. API keys are stored in a JSON file and can be managed using the provided script:
 
 ```bash
-./generate_api_key.sh [key_length]
+# Generate a new token
+python manage_token.py generate "admin-key" --length 32
+
+# Add an existing token
+python manage_token.py add "your-token-here" "dev-key"
+
+# List all tokens
+python manage_token.py list
+
+# Revoke a token
+python manage_token.py revoke "token-to-revoke"
 ```
 
-This will:
-- Generate a cryptographically secure random API key
-- Update the `.env` file with the new key
-- Update the test script to use the new key
-
 For security, the API key is required for all endpoints except `/health`. Clients must include the API key in the `x-api-key` header for all requests.
+
+#### Rate Limiting
+
+The API includes rate limiting to prevent abuse:
+
+- `/embed` endpoint: 10 requests per minute
+- `/rag/query` endpoint: 20 requests per minute
+
+When the rate limit is exceeded, the API returns a 429 Too Many Requests response.
 
 ### 4. Testing the RAG API
 
@@ -102,11 +116,12 @@ rag:
    - Never store passwords in environment files or Docker Compose files
 
 2. **API Security**:
-   - API key authentication is implemented for all endpoints except `/health`
-   - Use the `generate_api_key.sh` script to create strong, random API keys
+   - Token-based authentication is implemented for all endpoints except `/health`
+   - Tokens can be rotated, revoked, and audited using the `manage_token.py` script
+   - Rate limiting is implemented to prevent abuse (10/min for `/embed`, 20/min for `/rag/query`)
    - In production, restrict CORS to specific origins
-   - Add rate limiting to prevent abuse
    - Consider using HTTPS in production environments
+   - Optional IP whitelisting can be enabled for additional security
 
 3. **Data Protection**:
    - Be aware that vector embeddings can potentially leak information
