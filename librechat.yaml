@@ -1,0 +1,45 @@
+# ✅ LibreChat-Ollama Configuration
+ollama:
+  enabled: true
+  baseURL: "http://localhost:11434/v1"
+  models:
+    - deepseek-coder:6.7b
+    - codellama:13b
+    - codellama:34b
+  embeddings:
+    enabled: true
+    model: "nomic-embed-text"
+    dimensions: 3072
+    endpoint: "http://localhost:11434/api/embeddings"
+
+rag:
+  enabled: true
+  vector_db: pgvector
+  chunk_size: 512
+  overlap: 50
+  rag_api_url: "http://localhost:5110"
+
+postgres:
+  host: "localhost"
+  port: 5432
+  database: "ollama_ai_db"
+  user: "ollama_app"
+  password: "your_password_here"  # Replace with secure source or .pgpass in production
+
+# Optional UI Agent Tooling
+agents:
+  - name: "CodeReviewer"
+    persona: "refactor_engineer"
+    tools: []
+    description: "Reviews and refactors uploaded code snippets."
+
+  - name: "SecurityAuditor"
+    persona: "security_auditor"
+    tools: []
+    description: "Identifies security flaws and weak patterns."
+
+mcp_servers:
+  - name: "OpenSearchTool"
+    type: "http"
+    entrypoint: "http://localhost:9005/opensearch-mcp"
+    description: "MCP server for OpenSearch semantic memory access"
