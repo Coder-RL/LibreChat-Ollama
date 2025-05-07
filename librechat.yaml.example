@@ -1,4 +1,7 @@
 # ✅ LibreChat-Ollama Configuration
+version: 1.2.1  # Configuration version
+
+# Ollama Configuration
 ollama:
   enabled: true
   baseURL: "http://localhost:11434/v1"
@@ -12,6 +15,7 @@ ollama:
     dimensions: 3072
     endpoint: "http://localhost:11434/api/embeddings"
 
+# RAG Configuration
 rag:
   enabled: true
   vector_db: pgvector
@@ -20,6 +24,7 @@ rag:
   rag_api:
     base_url: "http://localhost:5110"
 
+# PostgreSQL Configuration
 postgres:
   host: "localhost"
   port: 5432
@@ -39,6 +44,7 @@ agents:
     tools: []
     description: "Identifies security flaws and weak patterns."
 
+# MCP Server Configuration
 mcp_servers:
   - name: "OpenSearchTool"
     type: "http"

@@ -16,6 +16,7 @@ venv/
 .env
 *.env
 .env.*
+librechat.yaml
 .msmtprc
 ~/.msmtprc
 msmtprc
