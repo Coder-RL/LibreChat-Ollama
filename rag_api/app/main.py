@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import os
 import logging
 import time
@@ -56,7 +56,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 # Import token store for API key validation and management
-from .token_store import is_valid_token, list_tokens, prune_stale_tokens, get_token_usage_stats
+from .token_store import is_valid_token, list_tokens, prune_stale_tokens, get_token_usage_stats, _now
 
 # Security logging and monitoring
 from collections import defaultdict
@@ -243,12 +243,20 @@ async def token_usage():
 # Token pruning endpoint
 @app.post("/tokens/prune", dependencies=[Depends(validate_api_key)])
 async def prune_tokens():
-    """Remove tokens that haven't been used for a long time."""
+    """Remove tokens that haven't been used for a long time or have expired."""
     removed = prune_stale_tokens()
     return {
         "revoked": [r[0][:6] + "..." for r in removed],
         "count": len(removed),
-        "details": [{"label": r[1].get("label"), "last_used": r[1].get("last_used")} for r in removed]
+        "details": [
+            {
+                "label": r[1].get("label"),
+                "last_used": r[1].get("last_used"),
+                "expires": r[1].get("expires"),
+                "reason": "expired" if r[1].get("expires") and _now() > r[1].get("expires") else "stale"
+            }
+            for r in removed
+        ]
     }
 
 # Security audit endpoint
@@ -261,6 +269,62 @@ async def security_audit():
         "unknown_token_ips": {k: list(v) for k, v in SECURITY_LOG["unknown_token_ips"].items()},
         "rate_limit_hits": dict(SECURITY_LOG["rate_limit_hits"])
     }
+
+# Metrics endpoint for Prometheus
+@app.get("/metrics", dependencies=[Depends(validate_api_key)])
+async def metrics():
+    """Get metrics in Prometheus format."""
+    stats = get_token_usage_stats()
+    security_metrics = {
+        "invalid_key_attempts": sum(SECURITY_LOG["invalid_keys"].values()),
+        "blocked_ips": sum(SECURITY_LOG["blocked_ips"].values()),
+        "rate_limit_hits": sum(SECURITY_LOG["rate_limit_hits"].values())
+    }
+
+    # Build Prometheus-compatible output
+    lines = []
+
+    # Token metrics
+    lines.append("# HELP ragapi_tokens_total Total number of tokens")
+    lines.append("# TYPE ragapi_tokens_total gauge")
+    lines.append(f"ragapi_tokens_total {stats['total_tokens']}")
+
+    lines.append("# HELP ragapi_tokens_active Number of active tokens")
+    lines.append("# TYPE ragapi_tokens_active gauge")
+    lines.append(f"ragapi_tokens_active {stats['active_tokens']}")
+
+    lines.append("# HELP ragapi_tokens_unused Number of unused tokens")
+    lines.append("# TYPE ragapi_tokens_unused gauge")
+    lines.append(f"ragapi_tokens_unused {stats['unused_tokens']}")
+
+    lines.append("# HELP ragapi_tokens_expired Number of expired tokens")
+    lines.append("# TYPE ragapi_tokens_expired gauge")
+    lines.append(f"ragapi_tokens_expired {stats['expired_tokens']}")
+
+    lines.append("# HELP ragapi_tokens_expiring_soon Number of tokens expiring in the next 7 days")
+    lines.append("# TYPE ragapi_tokens_expiring_soon gauge")
+    lines.append(f"ragapi_tokens_expiring_soon {stats['expiring_soon_tokens']}")
+
+    # Request metrics
+    total_requests = sum(token.get("request_count", 0) for token in stats["tokens"].values())
+    lines.append("# HELP ragapi_requests_total Total number of requests")
+    lines.append("# TYPE ragapi_requests_total counter")
+    lines.append(f"ragapi_requests_total {total_requests}")
+
+    # Security metrics
+    lines.append("# HELP ragapi_security_invalid_keys Total number of invalid key attempts")
+    lines.append("# TYPE ragapi_security_invalid_keys counter")
+    lines.append(f"ragapi_security_invalid_keys {security_metrics['invalid_key_attempts']}")
+
+    lines.append("# HELP ragapi_security_blocked_ips Total number of blocked IP attempts")
+    lines.append("# TYPE ragapi_security_blocked_ips counter")
+    lines.append(f"ragapi_security_blocked_ips {security_metrics['blocked_ips']}")
+
+    lines.append("# HELP ragapi_security_rate_limit_hits Total number of rate limit hits")
+    lines.append("# TYPE ragapi_security_rate_limit_hits counter")
+    lines.append(f"ragapi_security_rate_limit_hits {security_metrics['rate_limit_hits']}")
+
+    return Response(content="\n".join(lines), media_type="text/plain")
 
 # Root endpoint with API information
 @app.get("/")

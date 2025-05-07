@@ -1,0 +1,22 @@
+# Example crontab entries for RAG API token management
+# To use: crontab -e and paste the relevant entries
+
+# Environment variables
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RAG_API_DIR=/path/to/LibreChat-Ollama/rag_api
+
+# Prune expired and stale tokens daily at 2:00 AM
+0 2 * * * cd $RAG_API_DIR && python manage_token.py prune >> /var/log/rag_api/token_prune.log 2>&1
+
+# Generate a weekly report of token usage (every Monday at 8:00 AM)
+0 8 * * 1 cd $RAG_API_DIR && python manage_token.py list --verbose > /var/log/rag_api/token_report.log 2>&1
+
+# Rotate admin token every 30 days (1st day of each month)
+0 0 1 * * cd $RAG_API_DIR && python manage_token.py generate "admin-$(date +\%Y\%m\%d)" --ttl 30d >> /var/log/rag_api/token_rotation.log 2>&1
+
+# Check for security alerts hourly
+0 * * * * cd $RAG_API_DIR && curl -s -H "x-api-key:YOUR_ADMIN_TOKEN" http://localhost:5110/security/audit | grep -q '"invalid_key_attempts":' && python notify.py email --to admin@example.com --subject "Security Alert" --message "Invalid key attempts detected" >> /var/log/rag_api/security_alerts.log 2>&1
+
+# Collect metrics for Prometheus (every 5 minutes)
+*/5 * * * * cd $RAG_API_DIR && curl -s -H "x-api-key:YOUR_ADMIN_TOKEN" http://localhost:5110/metrics > /var/lib/prometheus/node_exporter/rag_api_metrics.prom 2>> /var/log/rag_api/metrics.log

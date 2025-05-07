@@ -233,6 +233,32 @@ else
   ((failures++))
 fi
 
+# === Test metrics endpoint ===
+echo -e "\n🔹 Testing /metrics endpoint..." | tee -a "$LOG_FILE"
+METRICS_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$API_URL/metrics" \
+  -H "x-api-key: $API_KEY" \
+  -m $HTTP_TIMEOUT)
+
+METRICS_BODY=$(echo "$METRICS_RESPONSE" | head -n -1)
+METRICS_STATUS=$(echo "$METRICS_RESPONSE" | tail -n1)
+
+echo "📥 Status code: $METRICS_STATUS" | tee -a "$LOG_FILE"
+if [[ "$METRICS_STATUS" -eq 200 ]]; then
+  echo "✅ Metrics endpoint working" | tee -a "$LOG_FILE"
+  echo "$METRICS_BODY" | head -n 10 >> "$LOG_FILE"
+
+  # Check if metrics contain expected data
+  if echo "$METRICS_BODY" | grep -q "ragapi_tokens_total"; then
+    echo "✅ Prometheus metrics format verified" | tee -a "$LOG_FILE"
+  else
+    echo "❌ Prometheus metrics format not found" | tee -a "$LOG_FILE"
+    ((failures++))
+  fi
+else
+  echo "❌ Metrics endpoint failed with status $METRICS_STATUS" | tee -a "$LOG_FILE"
+  ((failures++))
+fi
+
 # === Test security audit endpoint ===
 echo -e "\n🔹 Testing /security/audit endpoint..." | tee -a "$LOG_FILE"
 AUDIT_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$API_URL/security/audit" \

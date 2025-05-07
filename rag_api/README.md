@@ -39,23 +39,46 @@ The `.env` file is already configured to use pgvector with Ollama embeddings.
 
 #### API Key Security
 
-The RAG API is protected by a token-based authentication system with enhanced security features. API keys are stored in a JSON file with usage metadata and can be managed using the provided script:
+The RAG API is protected by a token-based authentication system with enhanced security features. API keys are hashed using SHA-256 and stored in a JSON file with usage metadata. Tokens can be managed using the provided script:
 
 ```bash
 # Generate a new token
-python manage_token.py generate "admin-key" --length 32
+python manage_token.py generate "admin-key" --length 32 --ttl 30d
 
-# Add an existing token
-python manage_token.py add "your-token-here" "dev-key"
+# Add an existing token with expiry
+python manage_token.py add "your-token-here" "dev-key" --ttl 7d
 
-# List all tokens
+# List all tokens (basic view)
 python manage_token.py list
+
+# List all tokens with detailed information
+python manage_token.py list --verbose
 
 # Revoke a token
 python manage_token.py revoke "token-to-revoke"
+
+# Prune expired and stale tokens
+python manage_token.py prune
 ```
 
 For security, the API key is required for all endpoints except `/health`. Clients must include the API key in the `x-api-key` header for all requests.
+
+#### Token Expiry and TTL
+
+Tokens can be created with a time-to-live (TTL) to automatically expire after a specified period:
+
+```bash
+# Create a token that expires in 30 days
+python manage_token.py generate "temp-key" --ttl 30d
+
+# Create a token that expires in 12 hours
+python manage_token.py generate "short-key" --ttl 12h
+
+# Create a token that expires in 30 minutes
+python manage_token.py generate "very-short-key" --ttl 30m
+```
+
+Expired tokens are automatically rejected and can be pruned using the `prune` command.
 
 #### Token Usage Dashboard
 
@@ -96,6 +119,32 @@ This returns information about:
 - Blocked IP addresses
 - Unknown IP addresses using tokens
 - Rate limit hits
+
+#### Prometheus Metrics
+
+The API provides a Prometheus-compatible metrics endpoint for monitoring:
+
+```bash
+# Get metrics in Prometheus format
+curl -H "x-api-key: your-token-here" http://localhost:5110/metrics
+```
+
+This returns metrics in the standard Prometheus text format:
+
+```
+# HELP ragapi_tokens_total Total number of tokens
+# TYPE ragapi_tokens_total gauge
+ragapi_tokens_total 5
+# HELP ragapi_tokens_active Number of active tokens
+# TYPE ragapi_tokens_active gauge
+ragapi_tokens_active 3
+# HELP ragapi_tokens_expired Number of expired tokens
+# TYPE ragapi_tokens_expired gauge
+ragapi_tokens_expired 1
+...
+```
+
+These metrics can be scraped by Prometheus and visualized in Grafana dashboards.
 
 #### Security Notifications
 
@@ -185,6 +234,8 @@ rag:
 
 2. **API Security**:
    - Token-based authentication is implemented for all endpoints except `/health`
+   - Tokens are hashed using SHA-256 to prevent plaintext storage
+   - Tokens can be created with TTL for automatic expiration
    - Tokens can be rotated, revoked, and audited using the `manage_token.py` script
    - Token usage is tracked with metadata (creation time, last used, request count, IP addresses)
    - Stale tokens can be automatically revoked to prevent security risks
@@ -192,6 +243,7 @@ rag:
    - Security events are logged and can be monitored via the `/security/audit` endpoint
    - Multiple failed authentication attempts from the same IP are flagged as security alerts
    - Email and Slack notifications can be sent for security events using the `notify.py` script
+   - Prometheus-compatible metrics are available for monitoring
    - In production, restrict CORS to specific origins
    - Consider using HTTPS in production environments
    - Optional IP whitelisting can be enabled for additional security
