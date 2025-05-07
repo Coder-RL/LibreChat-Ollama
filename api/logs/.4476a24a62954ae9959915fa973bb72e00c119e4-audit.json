@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/Users/robertlee/GitHubProjects/LibreChat-Ollama/api/logs/.4476a24a62954ae9959915fa973bb72e00c119e4-audit.json",
+    "files": [
+        {
+            "date": 1746639090185,
+            "name": "/Users/robertlee/GitHubProjects/LibreChat-Ollama/api/logs/meiliSync-2025-05-07.log",
+            "hash": "a7d246f6cdbff74790221cadf119618b2e77a0f6091afc9179e8abf77a111d5b"
+        }
+    ],
+    "hashType": "sha256"
+}
